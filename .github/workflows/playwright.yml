@@ -2,17 +2,21 @@ name: Playwright Sharded Tests
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
+  # JOB 1: Run tests in parallel shards using Docker
   test:
     name: Run Shard ${{ matrix.shardIndex }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shardIndex: [1, 2] # Splitting tests into 2 parallel shards
+        shardIndex: [1, 2] # Splitting into 2 parallel shards
         shardTotal: [2]
     
+    # Using the official Playwright Docker image as the runner environment
     container:
       image: mcr.microsoft.com/playwright:v1.59.1-noble
 
@@ -21,8 +25,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm ci
-      - name: Run Tests
+      
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Playwright tests (Sharded)
+        # We pass the shard info directly to the test command
         run: npx playwright test --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
       
       - name: Upload Blob Report
@@ -33,6 +41,7 @@ jobs:
           path: blob-report
           retention-days: 1
 
+  # JOB 2: Merge the results and send the Email
   publish-report:
     name: Merge & Email Report
     if: always()
@@ -43,17 +52,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      
       - run: npm ci
 
       - name: Download all Shards
         uses: actions/download-artifact@v4
         with:
-          path: all-blob-reports
+          # This creates a folder named 'merged-blobs' and puts ALL shard files inside it
+          path: merged-blobs
           pattern: all-blob-reports-*
           merge-multiple: true
 
       - name: Merge Reports into HTML
-        run: npx playwright merge-reports --reporter html ./all-blob-reports
+        # Pointing to the 'merged-blobs' folder we just created
+        run: npx playwright merge-reports --reporter html ./merged-blobs
 
       - name: Send Report via Email
         uses: dawidd6/action-send-mail@v3
@@ -63,7 +75,7 @@ jobs:
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: "QA Automation Report: Playwright Run Complete"
-          to: "your-email@example.com"
+          to: "aman.j@intimetec.com"
           from: "Playwright CI"
-          body: "The test run has finished. Please find the consolidated HTML report attached."
+          body: "Hello Aman, the test run has finished successfully across all Docker containers. Attached is the consolidated report."
           attachments: playwright-report/index.html

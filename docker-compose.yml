@@ -1,0 +1,11 @@
+services:
+  playwright:
+    build: .
+    container_name: playwright-runner
+    volumes:
+      - ./playwright-report:/app/playwright-report
+      - ./test-results:/app/test-results
+    environment:
+      - CI=false
+    # Runs all tests locally inside Docker
+    command: npx playwright test

@@ -1,0 +1,69 @@
+name: Playwright Sharded Tests
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Run Shard ${{ matrix.shardIndex }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shardIndex: [1, 2] # Splitting tests into 2 parallel shards
+        shardTotal: [2]
+    
+    container:
+      image: mcr.microsoft.com/playwright:v1.59.1-noble
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: Run Tests
+        run: npx playwright test --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
+      
+      - name: Upload Blob Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-blob-reports-${{ matrix.shardIndex }}
+          path: blob-report
+          retention-days: 1
+
+  publish-report:
+    name: Merge & Email Report
+    if: always()
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+
+      - name: Download all Shards
+        uses: actions/download-artifact@v4
+        with:
+          path: all-blob-reports
+          pattern: all-blob-reports-*
+          merge-multiple: true
+
+      - name: Merge Reports into HTML
+        run: npx playwright merge-reports --reporter html ./all-blob-reports
+
+      - name: Send Report via Email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "QA Automation Report: Playwright Run Complete"
+          to: "your-email@example.com"
+          from: "Playwright CI"
+          body: "The test run has finished. Please find the consolidated HTML report attached."
+          attachments: playwright-report/index.html
